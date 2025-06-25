@@ -23,7 +23,7 @@ func main() {
 
 	// Register (encrypt and store) the secret
 	fmt.Println("📝 Registering secret...")
-	metadata, err := ocrypt.Register(userID, appID, []byte(secretData), password, 10)
+	metadata, err := ocrypt.Register(userID, appID, []byte(secretData), password, 10, "")
 	if err != nil {
 		log.Fatalf("Failed to register secret: %v", err)
 	}
@@ -34,7 +34,7 @@ func main() {
 
 	// Recover (decrypt) the secret
 	fmt.Println("🔓 Recovering secret...")
-	recoveredSecret, remaining, newMetadata, err := ocrypt.Recover(metadata, password)
+	recoveredSecret, remaining, newMetadata, err := ocrypt.Recover(metadata, password, "")
 	if err != nil {
 		log.Fatalf("Failed to recover secret: %v", err)
 	}
@@ -54,7 +54,7 @@ func main() {
 
 	// Try with wrong password to demonstrate security
 	fmt.Println("\n🚫 Testing with wrong password...")
-	_, _, _, err = ocrypt.Recover(metadata, "wrongPassword")
+	_, _, _, err = ocrypt.Recover(metadata, "wrongPassword", "")
 	if err != nil {
 		fmt.Printf("✅ Correctly rejected wrong password: %v\n", err)
 	} else {

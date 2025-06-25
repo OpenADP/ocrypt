@@ -63,7 +63,7 @@ func TestRegisterInputValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Register(tt.userID, tt.appID, tt.longTermSecret, tt.pin, tt.maxGuesses)
+			_, err := Register(tt.userID, tt.appID, tt.longTermSecret, tt.pin, tt.maxGuesses, "")
 
 			if tt.wantError {
 				if err == nil {
@@ -105,7 +105,7 @@ func TestRecoverInputValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, _, err := Recover(tt.metadata, tt.pin)
+			_, _, _, err := Recover(tt.metadata, tt.pin, "")
 
 			if tt.wantError {
 				if err == nil {
@@ -352,7 +352,7 @@ func TestRegisterUsesDefaultBackupID(t *testing.T) {
 	secret := []byte("test_secret")
 	pin := "1234"
 
-	_, err := Register(userID, appID, secret, pin, 10)
+	_, err := Register(userID, appID, secret, pin, 10, "")
 
 	// Should fail at server discovery, but error should indicate it tried to proceed
 	if err == nil {

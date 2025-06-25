@@ -15,13 +15,13 @@
 // Example Usage:
 //
 //	// Register a secret
-//	metadata, err := ocrypt.Register("alice@example.com", "my_app", secret, "password123", 10)
+//	metadata, err := ocrypt.Register("alice@example.com", "my_app", secret, "password123", 10, "")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //
 //	// Later, recover the secret
-//	recoveredSecret, remaining, updatedMetadata, err := ocrypt.Recover(metadata, "password123")
+//	recoveredSecret, remaining, updatedMetadata, err := ocrypt.Recover(metadata, "password123", "")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
@@ -87,17 +87,18 @@ type WrappedSecret struct {
 //	longTermSecret: User-provided secret to protect (any byte sequence)
 //	pin: Password/PIN that will unlock the secret
 //	maxGuesses: Maximum wrong PIN attempts before lockout (default: 10)
+//	serversURL: Optional custom URL for server registry (empty string uses default)
 //
 // Returns:
 //
 //	metadata: Opaque blob to store alongside user record
 //	error: Any error that occurred during registration
-func Register(userID, appID string, longTermSecret []byte, pin string, maxGuesses int) ([]byte, error) {
-	return registerWithBID(userID, appID, longTermSecret, pin, maxGuesses, "even")
+func Register(userID, appID string, longTermSecret []byte, pin string, maxGuesses int, serversURL string) ([]byte, error) {
+	return registerWithBID(userID, appID, longTermSecret, pin, maxGuesses, "even", serversURL)
 }
 
 // registerWithBID is the internal implementation that allows specifying backup ID
-func registerWithBID(userID, appID string, longTermSecret []byte, pin string, maxGuesses int, backupID string) ([]byte, error) {
+func registerWithBID(userID, appID string, longTermSecret []byte, pin string, maxGuesses int, backupID string, serversURL string) ([]byte, error) {
 	// Input validation
 	if userID == "" {
 		return nil, &OcryptError{Message: "user_id must be a non-empty string", Code: "INVALID_INPUT"}
@@ -121,7 +122,7 @@ func registerWithBID(userID, appID string, longTermSecret []byte, pin string, ma
 
 	// Step 1: Discover OpenADP servers
 	fmt.Println("🌐 Discovering OpenADP servers...")
-	serverInfos, err := getServers()
+	serverInfos, err := getServers(serversURL)
 	if err != nil {
 		return nil, &OcryptError{Message: fmt.Sprintf("Server discovery failed: %v", err), Code: "SERVER_DISCOVERY_FAILED"}
 	}
@@ -189,6 +190,7 @@ func registerWithBID(userID, appID string, longTermSecret []byte, pin string, ma
 //
 //	metadata: Metadata blob from Register()
 //	pin: Password/PIN to unlock the secret
+//	serversURL: Optional custom URL for server registry (empty string uses default)
 //
 // Returns:
 //
@@ -196,7 +198,7 @@ func registerWithBID(userID, appID string, longTermSecret []byte, pin string, ma
 //	remaining: Number of remaining guess attempts (0 means no limit)
 //	updatedMetadata: Updated metadata (may be same as input if refresh failed)
 //	error: Any error that occurred during recovery
-func Recover(metadataBytes []byte, pin string) ([]byte, int, []byte, error) {
+func Recover(metadataBytes []byte, pin string, serversURL string) ([]byte, int, []byte, error) {
 	// Input validation
 	if len(metadataBytes) == 0 {
 		return nil, 0, nil, &OcryptError{Message: "metadata cannot be empty", Code: "INVALID_INPUT"}
@@ -207,7 +209,7 @@ func Recover(metadataBytes []byte, pin string) ([]byte, int, []byte, error) {
 
 	// Step 1: Recover with existing backup
 	fmt.Println("📋 Step 1: Recovering with existing backup...")
-	secret, remaining, err := recoverWithoutRefresh(metadataBytes, pin)
+	secret, remaining, err := recoverWithoutRefresh(metadataBytes, pin, serversURL)
 	if err != nil {
 		return nil, 0, nil, err
 	}
@@ -227,7 +229,7 @@ func Recover(metadataBytes []byte, pin string) ([]byte, int, []byte, error) {
 	newBackupID := generateNextBackupID(metadata.BackupID)
 	fmt.Printf("🔄 Two-phase commit: %s → %s\n", metadata.BackupID, newBackupID)
 
-	refreshedMetadata, err := registerWithCommitInternal(metadata.UserID, metadata.AppID, secret, pin, metadata.MaxGuesses, newBackupID)
+	refreshedMetadata, err := registerWithCommitInternal(metadata.UserID, metadata.AppID, secret, pin, metadata.MaxGuesses, newBackupID, serversURL)
 	if err != nil {
 		fmt.Printf("⚠️  Backup refresh failed: %v\n", err)
 		fmt.Println("✅ Recovery still successful with existing backup")
@@ -241,7 +243,7 @@ func Recover(metadataBytes []byte, pin string) ([]byte, int, []byte, error) {
 }
 
 // recoverWithoutRefresh recovers a secret without attempting backup refresh
-func recoverWithoutRefresh(metadataBytes []byte, pin string) ([]byte, int, error) {
+func recoverWithoutRefresh(metadataBytes []byte, pin string, serversURL string) ([]byte, int, error) {
 	// Parse metadata
 	var metadata Metadata
 	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
@@ -252,7 +254,7 @@ func recoverWithoutRefresh(metadataBytes []byte, pin string) ([]byte, int, error
 
 	// Get server information
 	fmt.Println("🌐 Getting server information from registry...")
-	allServers, err := getServers()
+	allServers, err := getServers(serversURL)
 	if err != nil {
 		return nil, 0, &OcryptError{Message: fmt.Sprintf("Server discovery failed: %v", err), Code: "SERVER_DISCOVERY_FAILED"}
 	}
@@ -311,10 +313,10 @@ func recoverWithoutRefresh(metadataBytes []byte, pin string) ([]byte, int, error
 }
 
 // registerWithCommitInternal implements two-phase commit for backup refresh
-func registerWithCommitInternal(userID, appID string, longTermSecret []byte, pin string, maxGuesses int, newBackupID string) ([]byte, error) {
+func registerWithCommitInternal(userID, appID string, longTermSecret []byte, pin string, maxGuesses int, newBackupID string, serversURL string) ([]byte, error) {
 	// Phase 1: PREPARE - Register new backup
 	fmt.Println("📋 Phase 1: PREPARE - Registering new backup...")
-	newMetadata, err := registerWithBID(userID, appID, longTermSecret, pin, maxGuesses, newBackupID)
+	newMetadata, err := registerWithBID(userID, appID, longTermSecret, pin, maxGuesses, newBackupID, serversURL)
 	if err != nil {
 		return nil, fmt.Errorf("Phase 1 failed: %v", err)
 	}
@@ -322,7 +324,7 @@ func registerWithCommitInternal(userID, appID string, longTermSecret []byte, pin
 
 	// Phase 2: COMMIT - Verify new backup works
 	fmt.Println("📋 Phase 2: COMMIT - Verifying new backup...")
-	_, _, err = recoverWithoutRefresh(newMetadata, pin)
+	_, _, err = recoverWithoutRefresh(newMetadata, pin, serversURL)
 	if err != nil {
 		return nil, fmt.Errorf("Phase 2 failed: %v", err)
 	}
@@ -428,9 +430,12 @@ func unwrapSecret(wrapped *WrappedSecret, key []byte) ([]byte, error) {
 }
 
 // getServers discovers OpenADP servers from the registry
-func getServers() ([]client.ServerInfo, error) {
-	// Use the default registry URL
+func getServers(serversURL string) ([]client.ServerInfo, error) {
+	// Use the provided URL, or fall back to default registry URL
 	registryURL := "https://servers.openadp.org/api/servers.json"
+	if serversURL != "" {
+		registryURL = serversURL
+	}
 	return client.GetServers(registryURL)
 }
 
