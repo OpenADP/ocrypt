@@ -177,9 +177,19 @@ func GenerateEncryptionKey(filename, password, userID string, maxGuesses, expira
 	// Step 5: Generate authentication codes for the live servers
 	authCodes := GenerateAuthCodes(liveServerURLs)
 
-	// Step 6: Generate deterministic secret and create point
-	// Use deterministic secret derivation for consistent key generation
-	secret := common.DeriveSecret([]byte(uid), []byte(did), []byte(bid), pin)
+	// Step 6: Generate RANDOM secret and create point
+	// SECURITY FIX: Use random secret for Shamir secret sharing, not deterministic
+	secret, err := rand.Int(rand.Reader, common.Q)
+	if err != nil {
+		return &GenerateEncryptionKeyResult{
+			Error: fmt.Sprintf("Failed to generate random secret: %v", err),
+		}
+	}
+
+	// Ensure secret is not zero
+	if secret.Sign() == 0 {
+		secret.SetInt64(1)
+	}
 
 	U := common.H([]byte(uid), []byte(did), []byte(bid), pin)
 	S := common.PointMul(secret, U)

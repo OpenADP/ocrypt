@@ -526,31 +526,4 @@ func reverseBytes(data []byte) []byte {
 	return result
 }
 
-// DeriveSecret creates a deterministic secret from input parameters.
-// This ensures the same inputs always produce the same secret for key recovery.
-func DeriveSecret(uid, did, bid, pin []byte) *big.Int {
-	// Combine all input parameters
-	combined := append(uid, did...)
-	combined = append(combined, bid...)
-	combined = append(combined, pin...)
-
-	// Add a domain separator to prevent collisions with other uses
-	domainSep := []byte("OPENADP_SECRET_DERIVATION_V1")
-	combined = append(domainSep, combined...)
-
-	// Hash the combined data
-	hash := sha256.Sum256(combined)
-
-	// Convert hash to big integer and reduce modulo Q
-	secret := new(big.Int).SetBytes(hash[:])
-	secret.Mod(secret, Q)
-
-	// Ensure secret is not zero
-	if secret.Sign() == 0 {
-		secret.SetInt64(1)
-	}
-
-	return secret
-}
-
 // DeriveEncKey derives an encryption key from a point using HKDF
