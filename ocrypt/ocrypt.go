@@ -137,10 +137,15 @@ func registerWithBID(userID, appID string, longTermSecret []byte, pin string, ma
 	fmt.Printf("🔄 Using backup ID: %s\n", backupID)
 	fmt.Println("🔑 Generating encryption key using OpenADP servers...")
 
-	// Create unique filename for this secret
-	filename := fmt.Sprintf("file://%s#%s#%s", userID, appID, backupID)
+	// Create Identity for Ocrypt API: UID=userID, DID=appID, BID=backupID
+	// This allows same secret recovery across devices for the same app
+	identity := &client.Identity{
+		UID: userID,   // User identifier
+		DID: appID,    // Application identifier (serves as device ID for cross-device compatibility)
+		BID: backupID, // Backup identifier (managed by Ocrypt: "even"/"odd")
+	}
 
-	result := client.GenerateEncryptionKey(filename, pin, userID, maxGuesses, 0, serverInfos)
+	result := client.GenerateEncryptionKey(identity, pin, maxGuesses, 0, serverInfos)
 	if result.Error != "" {
 		return nil, &OcryptError{Message: fmt.Sprintf("OpenADP registration failed: %s", result.Error), Code: "OPENADP_FAILED"}
 	}
@@ -277,13 +282,19 @@ func recoverWithoutRefresh(metadataBytes []byte, pin string, serversURL string) 
 
 	// Recover encryption key from OpenADP
 	fmt.Println("🔑 Recovering encryption key from OpenADP servers...")
-	filename := fmt.Sprintf("file://%s#%s#%s", metadata.UserID, metadata.AppID, metadata.BackupID)
+
+	// Create Identity for Ocrypt API: UID=userID, DID=appID, BID=backupID
+	// This matches the identity used during registration
+	identity := &client.Identity{
+		UID: metadata.UserID,   // User identifier
+		DID: metadata.AppID,    // Application identifier (serves as device ID for cross-device compatibility)
+		BID: metadata.BackupID, // Backup identifier (managed by Ocrypt: "even"/"odd")
+	}
 
 	// Reconstruct auth codes
 	authCodes := &client.AuthCodes{
 		BaseAuthCode:    metadata.AuthCode,
 		ServerAuthCodes: make(map[string]string),
-		UserID:          metadata.UserID,
 	}
 
 	// Generate server-specific auth codes
@@ -293,7 +304,7 @@ func recoverWithoutRefresh(metadataBytes []byte, pin string, serversURL string) 
 		authCodes.ServerAuthCodes[serverURL] = fmt.Sprintf("%x", hash[:])
 	}
 
-	result := client.RecoverEncryptionKeyWithServerInfo(filename, pin, metadata.UserID, serverInfos, metadata.Threshold, authCodes)
+	result := client.RecoverEncryptionKeyWithServerInfo(identity, pin, serverInfos, metadata.Threshold, authCodes)
 	if result.Error != "" {
 		return nil, 0, &OcryptError{Message: fmt.Sprintf("OpenADP recovery failed: %s", result.Error), Code: "OPENADP_RECOVERY_FAILED"}
 	}

@@ -1,69 +1,62 @@
 package client
 
 import (
+	"strings"
 	"testing"
 )
 
 // Test individual keygen functions without server dependencies
 
-func TestDeriveIdentifiers(t *testing.T) {
+func TestIdentity(t *testing.T) {
 	tests := []struct {
-		name     string
-		filename string
-		userID   string
-		hostname string
-		wantUID  bool // just check if it's generated
-		wantDID  bool // just check if it's generated
-		wantBID  bool // just check if it's generated
+		name    string
+		uid     string
+		did     string
+		bid     string
+		wantErr bool
 	}{
 		{
-			name:     "basic file",
-			filename: "test.txt",
-			userID:   "user123",
-			hostname: "host",
-			wantUID:  true,
-			wantDID:  true,
-			wantBID:  true,
+			name:    "basic test",
+			uid:     "user123",
+			did:     "myapp",
+			bid:     "even",
+			wantErr: false,
 		},
 		{
-			name:     "empty hostname",
-			filename: "test.txt",
-			userID:   "user123",
-			hostname: "",
-			wantUID:  true,
-			wantDID:  true,
-			wantBID:  true,
-		},
-		{
-			name:     "unicode filename",
-			filename: "тест.txt",
-			userID:   "пользователь",
-			hostname: "host",
-			wantUID:  true,
-			wantDID:  true,
-			wantBID:  true,
+			name:    "email user ID",
+			uid:     "alice@example.com",
+			did:     "document-app",
+			bid:     "odd",
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			uid, did, bid := DeriveIdentifiers(tt.filename, tt.userID, tt.hostname)
-
-			if tt.wantUID && uid == "" {
-				t.Errorf("DeriveIdentifiers() uid is empty")
-			}
-			if tt.wantDID && did == "" {
-				t.Errorf("DeriveIdentifiers() did is empty")
-			}
-			if tt.wantBID && bid == "" {
-				t.Errorf("DeriveIdentifiers() bid is empty")
+			identity := &Identity{
+				UID: tt.uid,
+				DID: tt.did,
+				BID: tt.bid,
 			}
 
-			// Test consistency - same inputs should produce same outputs
-			uid2, did2, bid2 := DeriveIdentifiers(tt.filename, tt.userID, tt.hostname)
-			if uid != uid2 || did != did2 || bid != bid2 {
-				t.Errorf("DeriveIdentifiers() not deterministic: got (%s,%s,%s) then (%s,%s,%s)",
-					uid, did, bid, uid2, did2, bid2)
+			// Check that all fields are non-empty
+			if identity.UID == "" {
+				t.Errorf("Identity.UID is empty")
+			}
+			if identity.DID == "" {
+				t.Errorf("Identity.DID is empty")
+			}
+			if identity.BID == "" {
+				t.Errorf("Identity.BID is empty")
+			}
+
+			// Test String() method
+			str := identity.String()
+			if str == "" {
+				t.Errorf("Identity.String() returned empty string")
+			}
+			if !strings.Contains(str, tt.uid) || !strings.Contains(str, tt.did) || !strings.Contains(str, tt.bid) {
+				t.Errorf("Identity.String() = %v, should contain UID, DID, and BID", str)
 			}
 		})
 	}
@@ -167,39 +160,53 @@ func TestGenerateAuthCodes(t *testing.T) {
 func TestGenerateEncryptionKeyInputValidation(t *testing.T) {
 	tests := []struct {
 		name       string
-		filename   string
+		identity   *Identity
 		password   string
-		userID     string
 		maxGuesses int
 		expiration int
 		serverURLs []string
 		wantError  bool
 	}{
 		{
-			name:       "empty filename",
-			filename:   "",
+			name:       "nil identity",
+			identity:   nil,
 			password:   "test",
-			userID:     "user",
 			maxGuesses: 10,
 			expiration: 0,
 			serverURLs: []string{"http://server1.com"},
 			wantError:  true,
 		},
 		{
-			name:       "empty userID",
-			filename:   "test.txt",
+			name:       "empty UID",
+			identity:   &Identity{UID: "", DID: "app", BID: "even"},
 			password:   "test",
-			userID:     "",
 			maxGuesses: 10,
 			expiration: 0,
 			serverURLs: []string{"http://server1.com"},
 			wantError:  true,
 		},
 		{
-			name:       "negative maxGuesses",
-			filename:   "test.txt",
+			name:       "empty DID",
+			identity:   &Identity{UID: "user", DID: "", BID: "even"},
 			password:   "test",
-			userID:     "user",
+			maxGuesses: 10,
+			expiration: 0,
+			serverURLs: []string{"http://server1.com"},
+			wantError:  true,
+		},
+		{
+			name:       "empty BID",
+			identity:   &Identity{UID: "user", DID: "app", BID: ""},
+			password:   "test",
+			maxGuesses: 10,
+			expiration: 0,
+			serverURLs: []string{"http://server1.com"},
+			wantError:  true,
+		},
+		{
+			name:       "negative max guesses",
+			identity:   &Identity{UID: "user", DID: "app", BID: "even"},
+			password:   "test",
 			maxGuesses: -1,
 			expiration: 0,
 			serverURLs: []string{"http://server1.com"},
@@ -207,9 +214,8 @@ func TestGenerateEncryptionKeyInputValidation(t *testing.T) {
 		},
 		{
 			name:       "no servers",
-			filename:   "test.txt",
+			identity:   &Identity{UID: "user", DID: "app", BID: "even"},
 			password:   "test",
-			userID:     "user",
 			maxGuesses: 10,
 			expiration: 0,
 			serverURLs: []string{},
@@ -217,9 +223,8 @@ func TestGenerateEncryptionKeyInputValidation(t *testing.T) {
 		},
 		{
 			name:       "valid inputs (will fail at server connection)",
-			filename:   "test.txt",
+			identity:   &Identity{UID: "user", DID: "app", BID: "even"},
 			password:   "test",
-			userID:     "user",
 			maxGuesses: 10,
 			expiration: 0,
 			serverURLs: []string{"http://localhost:9999"}, // non-existent server
@@ -229,7 +234,7 @@ func TestGenerateEncryptionKeyInputValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := GenerateEncryptionKey(tt.filename, tt.password, tt.userID,
+			result := GenerateEncryptionKey(tt.identity, tt.password,
 				tt.maxGuesses, tt.expiration, ConvertURLsToServerInfo(tt.serverURLs))
 
 			if tt.wantError && result.Error == "" {
@@ -245,29 +250,44 @@ func TestGenerateEncryptionKeyInputValidation(t *testing.T) {
 func TestRecoverEncryptionKeyInputValidation(t *testing.T) {
 	tests := []struct {
 		name        string
-		filename    string
+		identity    *Identity
 		password    string
-		userID      string
 		serverInfos []ServerInfo
 		threshold   int
 		authCodes   *AuthCodes
 		wantError   bool
 	}{
 		{
-			name:        "empty filename",
-			filename:    "",
+			name:        "nil identity",
+			identity:    nil,
 			password:    "test",
-			userID:      "user",
 			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
 			threshold:   1,
 			authCodes:   &AuthCodes{},
 			wantError:   true,
 		},
 		{
-			name:        "empty userID",
-			filename:    "test.txt",
+			name:        "empty UID",
+			identity:    &Identity{UID: "", DID: "app", BID: "even"},
 			password:    "test",
-			userID:      "",
+			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
+			threshold:   1,
+			authCodes:   &AuthCodes{},
+			wantError:   true,
+		},
+		{
+			name:        "empty DID",
+			identity:    &Identity{UID: "user", DID: "", BID: "even"},
+			password:    "test",
+			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
+			threshold:   1,
+			authCodes:   &AuthCodes{},
+			wantError:   true,
+		},
+		{
+			name:        "empty BID",
+			identity:    &Identity{UID: "user", DID: "app", BID: ""},
+			password:    "test",
 			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
 			threshold:   1,
 			authCodes:   &AuthCodes{},
@@ -275,9 +295,8 @@ func TestRecoverEncryptionKeyInputValidation(t *testing.T) {
 		},
 		{
 			name:        "zero threshold",
-			filename:    "test.txt",
+			identity:    &Identity{UID: "user", DID: "app", BID: "even"},
 			password:    "test",
-			userID:      "user",
 			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
 			threshold:   0,
 			authCodes:   &AuthCodes{},
@@ -285,9 +304,8 @@ func TestRecoverEncryptionKeyInputValidation(t *testing.T) {
 		},
 		{
 			name:        "negative threshold",
-			filename:    "test.txt",
+			identity:    &Identity{UID: "user", DID: "app", BID: "even"},
 			password:    "test",
-			userID:      "user",
 			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
 			threshold:   -1,
 			authCodes:   &AuthCodes{},
@@ -295,9 +313,8 @@ func TestRecoverEncryptionKeyInputValidation(t *testing.T) {
 		},
 		{
 			name:        "no servers",
-			filename:    "test.txt",
+			identity:    &Identity{UID: "user", DID: "app", BID: "even"},
 			password:    "test",
-			userID:      "user",
 			serverInfos: []ServerInfo{},
 			threshold:   1,
 			authCodes:   &AuthCodes{},
@@ -305,9 +322,8 @@ func TestRecoverEncryptionKeyInputValidation(t *testing.T) {
 		},
 		{
 			name:        "nil auth codes",
-			filename:    "test.txt",
+			identity:    &Identity{UID: "user", DID: "app", BID: "even"},
 			password:    "test",
-			userID:      "user",
 			serverInfos: []ServerInfo{{URL: "http://server1.com"}},
 			threshold:   1,
 			authCodes:   nil,
@@ -317,7 +333,7 @@ func TestRecoverEncryptionKeyInputValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := RecoverEncryptionKeyWithServerInfo(tt.filename, tt.password, tt.userID,
+			result := RecoverEncryptionKeyWithServerInfo(tt.identity, tt.password,
 				tt.serverInfos, tt.threshold, tt.authCodes)
 
 			if tt.wantError && result.Error == "" {
@@ -387,9 +403,12 @@ func TestKeygenRoundTrip(t *testing.T) {
 	}
 
 	// Test the complete keygen round trip using actual functions
-	filename := "test-file.txt"
+	identity := &Identity{
+		UID: "test-user-id-fixed",
+		DID: "test-app",
+		BID: "even",
+	}
 	password := "test-password-123"
-	userID := "test-user-id-fixed"
 	maxGuesses := 10
 	expiration := 0
 	serverURLs := []string{
@@ -400,7 +419,7 @@ func TestKeygenRoundTrip(t *testing.T) {
 
 	// Step 1: Generate encryption key
 	t.Log("🔐 Generating encryption key...")
-	result := GenerateEncryptionKey(filename, password, userID, maxGuesses, expiration, ConvertURLsToServerInfo(serverURLs))
+	result := GenerateEncryptionKey(identity, password, maxGuesses, expiration, ConvertURLsToServerInfo(serverURLs))
 	if result.Error != "" {
 		t.Skipf("Key generation failed (servers not available): %s", result.Error)
 	}
@@ -411,7 +430,7 @@ func TestKeygenRoundTrip(t *testing.T) {
 	// Step 2: Recover encryption key
 	t.Log("🔓 Recovering encryption key...")
 	serverInfos := ConvertURLsToServerInfo(result.ServerURLs)
-	recoveryResult := RecoverEncryptionKeyWithServerInfo(filename, password, userID, serverInfos, result.Threshold, result.AuthCodes)
+	recoveryResult := RecoverEncryptionKeyWithServerInfo(identity, password, serverInfos, result.Threshold, result.AuthCodes)
 	if recoveryResult.Error != "" {
 		t.Fatalf("Key recovery failed: %s", recoveryResult.Error)
 	}

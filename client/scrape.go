@@ -12,9 +12,10 @@ import (
 
 // ServerInfo represents information about an OpenADP server
 type ServerInfo struct {
-	URL       string `json:"url"`
-	PublicKey string `json:"public_key"`
-	Country   string `json:"country"`
+	URL              string `json:"url"`
+	PublicKey        string `json:"public_key"`
+	Country          string `json:"country"`
+	RemainingGuesses int    `json:"remaining_guesses,omitempty"` // -1 means unknown, >=0 means known remaining guesses
 }
 
 // ServersResponse represents the JSON response from the server registry
@@ -141,19 +142,22 @@ func GetFallbackServers() []string {
 func GetFallbackServerInfo() []ServerInfo {
 	return []ServerInfo{
 		{
-			URL:       "https://xyzzy.openadp.org",
-			PublicKey: "ed25519:AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholder1XyzzyServer12345TestKey",
-			Country:   "US",
+			URL:              "https://xyzzy.openadp.org",
+			PublicKey:        "ed25519:AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholder1XyzzyServer12345TestKey",
+			Country:          "US",
+			RemainingGuesses: -1,
 		},
 		{
-			URL:       "https://sky.openadp.org",
-			PublicKey: "ed25519:AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholder2SkyServerTestKey67890Demo",
-			Country:   "US",
+			URL:              "https://sky.openadp.org",
+			PublicKey:        "ed25519:AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholder2SkyServerTestKey67890Demo",
+			Country:          "US",
+			RemainingGuesses: -1,
 		},
 		{
-			URL:       "https://akash.network",
-			PublicKey: "ed25519:AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholder3AkashNetworkTestKey111Demo",
-			Country:   "CA",
+			URL:              "https://akash.network",
+			PublicKey:        "ed25519:AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholder3AkashNetworkTestKey111Demo",
+			Country:          "CA",
+			RemainingGuesses: -1,
 		},
 	}
 }
@@ -163,9 +167,10 @@ func ConvertURLsToServerInfo(urls []string) []ServerInfo {
 	serverInfos := make([]ServerInfo, len(urls))
 	for i, url := range urls {
 		serverInfos[i] = ServerInfo{
-			URL:       url,
-			PublicKey: "", // No public key available for URLs
-			Country:   "Unknown",
+			URL:              url,
+			PublicKey:        "", // No public key available for URLs
+			Country:          "Unknown",
+			RemainingGuesses: -1,
 		}
 	}
 	return serverInfos
