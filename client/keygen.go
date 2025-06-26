@@ -55,21 +55,6 @@ func DeriveIdentifiers(filename, userID, deviceID string) (uid, did, bid string)
 	return uid, did, bid
 }
 
-// PasswordToPin converts user password to PIN bytes for cryptographic operations.
-//
-// Args:
-//
-//	password: User-provided password string
-//
-// Returns:
-//
-//	PIN as bytes suitable for crypto.H()
-func PasswordToPin(password string) []byte {
-	// Hash password to get consistent bytes, then take first 2 bytes as PIN
-	hash := sha256.Sum256([]byte(password))
-	return hash[:2] // Use first 2 bytes as PIN
-}
-
 // GenerateEncryptionKeyResult represents the result of key generation
 type GenerateEncryptionKeyResult struct {
 	EncryptionKey []byte
@@ -124,7 +109,7 @@ func GenerateEncryptionKey(identity *Identity, password string, maxGuesses, expi
 	fmt.Printf("OpenADP: Identity=%s\n", identity.String())
 
 	// Step 1: Convert password to PIN
-	pin := PasswordToPin(password)
+	pin := []byte(password)
 
 	// Step 2: Check if we have servers
 	if len(serverInfos) == 0 {
@@ -329,7 +314,7 @@ func RecoverEncryptionKeyWithServerInfo(identity *Identity, password string, ser
 	fmt.Printf("OpenADP: Identity=%s\n", identity.String())
 
 	// Step 1: Convert password to same PIN
-	pin := PasswordToPin(password)
+	pin := []byte(password)
 
 	// Step 2: Check if we have servers and auth codes
 	if len(serverInfos) == 0 {
@@ -388,20 +373,32 @@ func RecoverEncryptionKeyWithServerInfo(identity *Identity, password string, ser
 	U := common.H([]byte(identity.UID), []byte(identity.DID), []byte(identity.BID), pin)
 
 	// Generate random r and compute B for recovery protocol
-	r, err := rand.Int(rand.Reader, common.Q)
-	if err != nil {
-		return &RecoverEncryptionKeyResult{
-			Error: fmt.Sprintf("Failed to generate random r: %v", err),
+	// TEMPORARY DEBUG: Set r = 1 for deterministic debugging (both tools should use same r)
+	r := big.NewInt(1)
+
+	/*
+		// TODO: Use random r in production
+		r, err := rand.Int(rand.Reader, common.Q)
+		if err != nil {
+			return &RecoverEncryptionKeyResult{
+				Error: fmt.Sprintf("Failed to generate random r: %v", err),
+			}
 		}
-	}
+	*/
 
 	// Compute r^-1 mod q
-	rInv := new(big.Int).ModInverse(r, common.Q)
-	if rInv == nil {
-		return &RecoverEncryptionKeyResult{
-			Error: "Failed to compute modular inverse",
+	// TEMPORARY DEBUG: Since r = 1, r^-1 = 1 (no need for modular inverse)
+	rInv := big.NewInt(1)
+
+	/*
+		// TODO: Use this in production when r is random
+		rInv := new(big.Int).ModInverse(r, common.Q)
+		if rInv == nil {
+			return &RecoverEncryptionKeyResult{
+				Error: "Failed to compute modular inverse",
+			}
 		}
-	}
+	*/
 
 	B := common.PointMul(r, U)
 

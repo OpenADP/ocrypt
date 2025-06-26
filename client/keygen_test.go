@@ -1,7 +1,6 @@
 package client
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -9,25 +8,32 @@ import (
 
 func TestIdentity(t *testing.T) {
 	tests := []struct {
-		name    string
-		uid     string
-		did     string
-		bid     string
-		wantErr bool
+		name string
+		uid  string
+		did  string
+		bid  string
+		want string
 	}{
 		{
-			name:    "basic test",
-			uid:     "user123",
-			did:     "myapp",
-			bid:     "even",
-			wantErr: false,
+			name: "basic identity",
+			uid:  "user123",
+			did:  "device456",
+			bid:  "backup789",
+			want: "UID=user123, DID=device456, BID=backup789",
 		},
 		{
-			name:    "email user ID",
-			uid:     "alice@example.com",
-			did:     "document-app",
-			bid:     "odd",
-			wantErr: false,
+			name: "empty fields",
+			uid:  "",
+			did:  "",
+			bid:  "",
+			want: "UID=, DID=, BID=",
+		},
+		{
+			name: "unicode characters",
+			uid:  "пользователь",
+			did:  "устройство",
+			bid:  "резервная_копия",
+			want: "UID=пользователь, DID=устройство, BID=резервная_копия",
 		},
 	}
 
@@ -39,68 +45,8 @@ func TestIdentity(t *testing.T) {
 				BID: tt.bid,
 			}
 
-			// Check that all fields are non-empty
-			if identity.UID == "" {
-				t.Errorf("Identity.UID is empty")
-			}
-			if identity.DID == "" {
-				t.Errorf("Identity.DID is empty")
-			}
-			if identity.BID == "" {
-				t.Errorf("Identity.BID is empty")
-			}
-
-			// Test String() method
-			str := identity.String()
-			if str == "" {
-				t.Errorf("Identity.String() returned empty string")
-			}
-			if !strings.Contains(str, tt.uid) || !strings.Contains(str, tt.did) || !strings.Contains(str, tt.bid) {
-				t.Errorf("Identity.String() = %v, should contain UID, DID, and BID", str)
-			}
-		})
-	}
-}
-
-func TestPasswordToPin(t *testing.T) {
-	tests := []struct {
-		name     string
-		password string
-		wantLen  int
-	}{
-		{
-			name:     "simple password",
-			password: "test123",
-			wantLen:  2, // First 2 bytes of SHA256 hash
-		},
-		{
-			name:     "empty password",
-			password: "",
-			wantLen:  2,
-		},
-		{
-			name:     "unicode password",
-			password: "пароль123",
-			wantLen:  2,
-		},
-		{
-			name:     "long password",
-			password: "this is a very long password with many characters",
-			wantLen:  2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pin := PasswordToPin(tt.password)
-			if len(pin) != tt.wantLen {
-				t.Errorf("PasswordToPin() length = %d, want %d", len(pin), tt.wantLen)
-			}
-
-			// Test consistency - same password should produce same PIN
-			pin2 := PasswordToPin(tt.password)
-			if string(pin) != string(pin2) {
-				t.Errorf("PasswordToPin() not deterministic")
+			if got := identity.String(); got != tt.want {
+				t.Errorf("Identity.String() = %v, want %v", got, tt.want)
 			}
 		})
 	}
