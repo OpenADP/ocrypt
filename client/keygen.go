@@ -373,32 +373,20 @@ func RecoverEncryptionKeyWithServerInfo(identity *Identity, password string, ser
 	U := common.H([]byte(identity.UID), []byte(identity.DID), []byte(identity.BID), pin)
 
 	// Generate random r and compute B for recovery protocol
-	// TEMPORARY DEBUG: Set r = 1 for deterministic debugging (both tools should use same r)
-	r := big.NewInt(1)
-
-	/*
-		// TODO: Use random r in production
-		r, err := rand.Int(rand.Reader, common.Q)
-		if err != nil {
-			return &RecoverEncryptionKeyResult{
-				Error: fmt.Sprintf("Failed to generate random r: %v", err),
-			}
+	r, err := rand.Int(rand.Reader, common.Q)
+	if err != nil {
+		return &RecoverEncryptionKeyResult{
+			Error: fmt.Sprintf("Failed to generate random r: %v", err),
 		}
-	*/
+	}
 
 	// Compute r^-1 mod q
-	// TEMPORARY DEBUG: Since r = 1, r^-1 = 1 (no need for modular inverse)
-	rInv := big.NewInt(1)
-
-	/*
-		// TODO: Use this in production when r is random
-		rInv := new(big.Int).ModInverse(r, common.Q)
-		if rInv == nil {
-			return &RecoverEncryptionKeyResult{
-				Error: "Failed to compute modular inverse",
-			}
+	rInv := new(big.Int).ModInverse(r, common.Q)
+	if rInv == nil {
+		return &RecoverEncryptionKeyResult{
+			Error: "Failed to compute modular inverse",
 		}
-	*/
+	}
 
 	B := common.PointMul(r, U)
 
