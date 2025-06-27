@@ -11,9 +11,11 @@ package client
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/openadp/ocrypt/common"
+	"github.com/openadp/ocrypt/debug"
 )
 
 // Share represents a (x, y) coordinate pair
@@ -78,10 +80,21 @@ func MakeRandomShares(secret *big.Int, minimum, shares int) ([]*Share, error) {
 
 	for i := 1; i < minimum; i++ {
 		// Generate random coefficient
-		coeff, err := rand.Int(rand.Reader, prime)
-		if err != nil {
-			return nil, err
+		var coeff *big.Int
+		var err error
+
+		if debug.IsDebugModeEnabled() {
+			// In debug mode, use deterministic coefficients: 1, 2, 3, ...
+			coeff = big.NewInt(int64(i))
+			debug.DebugLog(fmt.Sprintf("Using deterministic polynomial coefficient: %d", i))
+		} else {
+			// In normal mode, use cryptographically secure random
+			coeff, err = rand.Int(rand.Reader, prime)
+			if err != nil {
+				return nil, err
+			}
 		}
+
 		poly[i] = coeff
 	}
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openadp/ocrypt/common"
+	"github.com/openadp/ocrypt/debug"
 )
 
 // EncryptedOpenADPClient extends the basic client with Noise-NK encryption support
@@ -94,8 +95,19 @@ func (c *EncryptedOpenADPClient) makeUnencryptedRequest(method string, params in
 
 // makeEncryptedRequest makes a Noise-NK encrypted JSON-RPC request
 func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params interface{}, authData map[string]interface{}) (interface{}, error) {
+	// Add debug logging to match Python output
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Making encrypted request to %s", c.URL))
+		debug.DebugLog(fmt.Sprintf("Method: %s", method))
+		debug.DebugLog(fmt.Sprintf("Parameters (before encryption): %v", params))
+		debug.DebugLog(fmt.Sprintf("Auth data: %v", authData))
+	}
+
 	// Step 1: Generate session ID
 	sessionID := fmt.Sprintf("session_%d", time.Now().UnixNano())
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Generated session ID: %s", sessionID))
+	}
 
 	// Step 2: Create Noise client
 	noiseClient, err := common.NewNoiseNK("initiator", nil, c.serverPublicKey, []byte(""))
@@ -103,10 +115,20 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		return nil, fmt.Errorf("failed to create Noise client: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog("Initializing NoiseNK as initiator")
+		debug.DebugLog(fmt.Sprintf("Set remote static key: %x", c.serverPublicKey))
+	}
+
 	// Step 3: Start handshake
 	handshakeMsg1, err := noiseClient.WriteHandshakeMessage([]byte("test"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create handshake message: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog("NoiseNK handshake started")
+		debug.DebugLog(fmt.Sprintf("Created handshake message 1: %d bytes", len(handshakeMsg1)))
 	}
 
 	// Step 4: Send handshake to server
@@ -130,6 +152,10 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		return nil, fmt.Errorf("failed to marshal handshake request: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Sending handshake request (ID: %d)", requestID))
+	}
+
 	// Send handshake request
 	resp, err := c.HTTPClient.Post(c.URL, "application/json", bytes.NewBuffer(handshakeReqBytes))
 	if err != nil {
@@ -149,6 +175,16 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 	var handshakeResponse JSONRPCResponse
 	if err := json.Unmarshal(handshakeRespBody, &handshakeResponse); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal handshake response: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		// Convert response to JSON for logging
+		respJSON, _ := json.Marshal(map[string]interface{}{
+			"jsonrpc": "2.0",
+			"result":  handshakeResponse.Result,
+			"id":      handshakeResponse.ID,
+		})
+		debug.DebugLog(fmt.Sprintf("Handshake response received: %s", string(respJSON)))
 	}
 
 	if handshakeResponse.Error != nil {
@@ -171,10 +207,18 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		return nil, fmt.Errorf("failed to decode handshake message: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Received handshake message 2: %d bytes", len(handshakeMsg2)))
+	}
+
 	// Complete handshake
 	_, err = noiseClient.ReadHandshakeMessage(handshakeMsg2)
 	if err != nil {
 		return nil, fmt.Errorf("failed to complete handshake: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog("Noise-NK handshake completed successfully")
 	}
 
 	// Step 6: Prepare the actual method call
@@ -190,16 +234,28 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		methodCall["auth"] = authData
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Method call (before encryption): %v", methodCall))
+	}
+
 	// Serialize method call
 	methodCallBytes, err := json.Marshal(methodCall)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal method call: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Serialized method call: %d bytes", len(methodCallBytes)))
+	}
+
 	// Step 7: Encrypt the method call
 	encryptedCall, err := noiseClient.Encrypt(methodCallBytes, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt method call: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Encrypted method call: %d bytes", len(encryptedCall)))
 	}
 
 	// Step 8: Send encrypted call to server
@@ -218,6 +274,10 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 	encryptedReqBytes, err := json.Marshal(encryptedRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal encrypted request: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Sending encrypted call (ID: %d)", requestID+1))
 	}
 
 	// Send encrypted request
@@ -241,6 +301,16 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		return nil, fmt.Errorf("failed to unmarshal encrypted response: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		// Convert response to JSON for logging
+		respJSON, _ := json.Marshal(map[string]interface{}{
+			"jsonrpc": "2.0",
+			"result":  encryptedResponse.Result,
+			"id":      encryptedResponse.ID,
+		})
+		debug.DebugLog(fmt.Sprintf("Encrypted response received: %s", string(respJSON)))
+	}
+
 	if encryptedResponse.Error != nil {
 		return nil, fmt.Errorf("encrypted call JSON-RPC error %d: %s", encryptedResponse.Error.Code, encryptedResponse.Error.Message)
 	}
@@ -262,9 +332,17 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		return nil, fmt.Errorf("failed to decode encrypted data: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Encrypted data to decrypt: %d bytes", len(encryptedData)))
+	}
+
 	decryptedData, err := noiseClient.Decrypt(encryptedData, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt response: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Decrypted data: %d bytes", len(decryptedData)))
 	}
 
 	// Parse decrypted JSON-RPC response
@@ -273,8 +351,22 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		return nil, fmt.Errorf("failed to unmarshal decrypted response: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		// Convert response to JSON for logging
+		respJSON, _ := json.Marshal(map[string]interface{}{
+			"id":      decryptedResponse.ID,
+			"jsonrpc": "2.0",
+			"result":  decryptedResponse.Result,
+		})
+		debug.DebugLog(fmt.Sprintf("Decrypted response (after encryption): %s", string(respJSON)))
+	}
+
 	if decryptedResponse.Error != nil {
 		return nil, fmt.Errorf("decrypted JSON-RPC error %d: %s", decryptedResponse.Error.Code, decryptedResponse.Error.Message)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Encrypted request successful, result: %v", decryptedResponse.Result))
 	}
 
 	return decryptedResponse.Result, nil
@@ -285,14 +377,32 @@ func (c *EncryptedOpenADPClient) RegisterSecret(authCode, uid, did, bid string, 
 	// Server expects: [auth_code, uid, did, bid, version, x, y, max_guesses, expiration] (9 parameters)
 	params := []interface{}{authCode, uid, did, bid, version, x, y, maxGuesses, expiration}
 
+	// Debug logging for request
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("RegisterSecret request: method=RegisterSecret, uid=%s, did=%s, bid=%s, version=%d, x=%d, y=%s, maxGuesses=%d, expiration=%d, encrypted=%t",
+			uid, did, bid, version, x, y, maxGuesses, expiration, encrypted))
+		debug.DebugLog(fmt.Sprintf("RegisterSecret auth_code: %s", authCode))
+	}
+
 	result, err := c.makeRequest("RegisterSecret", params, encrypted, authData)
 	if err != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("RegisterSecret error: %v", err))
+		}
 		return false, err
 	}
 
 	success, ok := result.(bool)
 	if !ok {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("RegisterSecret unexpected response type: %T", result))
+		}
 		return false, fmt.Errorf("unexpected response type: %T", result)
+	}
+
+	// Debug logging for response
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("RegisterSecret response: success=%t", success))
 	}
 
 	return success, nil
@@ -303,14 +413,46 @@ func (c *EncryptedOpenADPClient) RecoverSecret(authCode, uid, did, bid, b string
 	// Server expects: [auth_code, uid, did, bid, b, guess_num] (6 parameters)
 	params := []interface{}{authCode, uid, did, bid, b, guessNum}
 
+	// Debug logging for request
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("RecoverSecret request: method=RecoverSecret, uid=%s, did=%s, bid=%s, b=%s, guessNum=%d, encrypted=%t",
+			uid, did, bid, b, guessNum, encrypted))
+		debug.DebugLog(fmt.Sprintf("RecoverSecret auth_code: %s", authCode))
+	}
+
 	result, err := c.makeRequest("RecoverSecret", params, encrypted, authData)
 	if err != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret error: %v", err))
+		}
 		return nil, err
 	}
 
 	resultMap, ok := result.(map[string]interface{})
 	if !ok {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret unexpected response type: %T", result))
+		}
 		return nil, fmt.Errorf("unexpected response type: %T", result)
+	}
+
+	// Debug logging for response
+	if debug.IsDebugModeEnabled() {
+		if version, ok := resultMap["version"].(int); ok {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret response: version=%d", version))
+		}
+		if x, ok := resultMap["x"].(int); ok {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret response: x=%d", x))
+		}
+		if siB, ok := resultMap["si_b"].(string); ok {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret response: si_b=%s", siB))
+		}
+		if numGuesses, ok := resultMap["num_guesses"].(int); ok {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret response: num_guesses=%d", numGuesses))
+		}
+		if maxGuesses, ok := resultMap["max_guesses"].(int); ok {
+			debug.DebugLog(fmt.Sprintf("RecoverSecret response: max_guesses=%d", maxGuesses))
+		}
 	}
 
 	return resultMap, nil

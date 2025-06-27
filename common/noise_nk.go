@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/flynn/noise"
+	"github.com/openadp/ocrypt/debug"
 )
 
 // NoiseNK represents a Noise-NK protocol handler
@@ -23,6 +25,32 @@ type NoiseNK struct {
 	handshakeHash     []byte
 	readMessage       bool
 	wroteMessage      bool
+}
+
+// DebugRandomReader provides deterministic randomness for debug mode
+type DebugRandomReader struct {
+	ephemeralSecret []byte
+	used            bool
+}
+
+// Read implements io.Reader for deterministic randomness
+func (dr *DebugRandomReader) Read(p []byte) (int, error) {
+	if debug.IsDebugModeEnabled() && !dr.used && len(p) >= 32 {
+		// Use deterministic ephemeral secret for the first 32 bytes (X25519 key)
+		dr.ephemeralSecret = debug.GetDeterministicEphemeralSecret()
+		copy(p[:32], dr.ephemeralSecret)
+		dr.used = true
+
+		// Fill the rest with zeros if needed
+		for i := 32; i < len(p); i++ {
+			p[i] = 0
+		}
+
+		return len(p), nil
+	}
+
+	// Fall back to secure random for non-debug mode or subsequent reads
+	return rand.Read(p)
 }
 
 // NewNoiseNK creates a new Noise-NK endpoint
@@ -68,10 +96,18 @@ func NewNoiseNK(role string, localStaticKey *noise.DHKey, remoteStaticKey []byte
 
 // initializeHandshake initializes the handshake state with NK pattern
 func (nk *NoiseNK) initializeHandshake() error {
+	// Create random reader (deterministic in debug mode)
+	var randomReader io.Reader
+	if debug.IsDebugModeEnabled() {
+		randomReader = &DebugRandomReader{}
+	} else {
+		randomReader = rand.Reader
+	}
+
 	// Create Noise config for NK pattern
 	config := noise.Config{
 		CipherSuite: noise.NewCipherSuite(noise.DH25519, noise.CipherAESGCM, noise.HashSHA256),
-		Random:      rand.Reader,
+		Random:      randomReader,
 		Pattern:     noise.HandshakeNK,
 		Initiator:   nk.isInitiator,
 		Prologue:    nk.prologue,

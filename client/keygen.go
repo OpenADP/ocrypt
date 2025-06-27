@@ -23,7 +23,14 @@ import (
 	"strings"
 
 	"github.com/openadp/ocrypt/common"
+	"github.com/openadp/ocrypt/debug"
 )
+
+// SetDebugMode enables or disables debug mode for deterministic operations.
+// This function provides access to debug mode for tools that use the client package directly.
+func SetDebugMode(enabled bool) {
+	debug.SetDebugMode(enabled)
+}
 
 // Identity represents the primary key tuple for secret shares stored on servers
 type Identity struct {
@@ -175,16 +182,27 @@ func GenerateEncryptionKey(identity *Identity, password string, maxGuesses, expi
 
 	// Step 5: Generate RANDOM secret and create point
 	// SECURITY FIX: Use random secret for Shamir secret sharing, not deterministic
-	secret, err := rand.Int(rand.Reader, common.Q)
-	if err != nil {
-		return &GenerateEncryptionKeyResult{
-			Error: fmt.Sprintf("Failed to generate random secret: %v", err),
-		}
-	}
+	var secret *big.Int
+	var err error
 
-	// Ensure secret is not zero
-	if secret.Sign() == 0 {
-		secret.SetInt64(1)
+	if debug.IsDebugModeEnabled() {
+		// In debug mode, use large deterministic secret
+		secret = debug.GetDeterministicMainSecret()
+		// Add duplicate debug output to match Python
+		_ = debug.GetDeterministicSecret()
+	} else {
+		// In normal mode, use cryptographically secure random
+		secret, err = rand.Int(rand.Reader, common.Q)
+		if err != nil {
+			return &GenerateEncryptionKeyResult{
+				Error: fmt.Sprintf("Failed to generate random secret: %v", err),
+			}
+		}
+
+		// Ensure secret is not zero
+		if secret.Sign() == 0 {
+			secret.SetInt64(1)
+		}
 	}
 
 	U := common.H([]byte(identity.UID), []byte(identity.DID), []byte(identity.BID), pin)
@@ -545,12 +563,20 @@ type AuthCodes struct {
 // for each server URL, matching the expected 64-character hex format.
 func GenerateAuthCodes(serverURLs []string) *AuthCodes {
 	// Generate base authentication code (256 bits = 32 bytes as hex = 64 chars)
-	baseBytes := make([]byte, 32)
-	if _, err := rand.Read(baseBytes); err != nil {
-		// SECURITY: Never use deterministic fallback for cryptographic operations
-		panic(fmt.Sprintf("CRITICAL: Cryptographic random number generation failed: %v. Cannot continue with insecure operations.", err))
+	var baseAuthCode string
+
+	if debug.IsDebugModeEnabled() {
+		// In debug mode, use deterministic base auth code
+		baseAuthCode = debug.GetDeterministicBaseAuthCode()
+	} else {
+		// In normal mode, use cryptographically secure random
+		baseBytes := make([]byte, 32)
+		if _, err := rand.Read(baseBytes); err != nil {
+			// SECURITY: Never use deterministic fallback for cryptographic operations
+			panic(fmt.Sprintf("CRITICAL: Cryptographic random number generation failed: %v. Cannot continue with insecure operations.", err))
+		}
+		baseAuthCode = fmt.Sprintf("%x", baseBytes)
 	}
-	baseAuthCode := fmt.Sprintf("%x", baseBytes)
 
 	// Generate server-specific authentication codes using SHA256
 	serverAuthCodes := make(map[string]string)
@@ -559,6 +585,10 @@ func GenerateAuthCodes(serverURLs []string) *AuthCodes {
 		combined := fmt.Sprintf("%s:%s", baseAuthCode, serverURL)
 		hash := sha256.Sum256([]byte(combined))
 		serverAuthCodes[serverURL] = fmt.Sprintf("%x", hash[:])
+
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("Generated auth code for server: %s", serverURL))
+		}
 	}
 
 	return &AuthCodes{

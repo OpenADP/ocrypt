@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/openadp/ocrypt/client"
+	"github.com/openadp/ocrypt/debug"
 )
 
 // OcryptError represents an error in Ocrypt operations
@@ -52,6 +53,12 @@ func (e *OcryptError) Error() string {
 		return fmt.Sprintf("Ocrypt %s: %s", e.Code, e.Message)
 	}
 	return fmt.Sprintf("Ocrypt error: %s", e.Message)
+}
+
+// SetDebugMode enables or disables debug mode for deterministic operations.
+// When enabled, all cryptographic operations become deterministic for testing.
+func SetDebugMode(enabled bool) {
+	debug.SetDebugMode(enabled)
 }
 
 // Metadata represents the Ocrypt metadata structure
