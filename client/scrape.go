@@ -42,8 +42,17 @@ func GetServers(registryURL string) ([]ServerInfo, error) {
 			return nil, fmt.Errorf("failed to read file %s: %v", filePath, err)
 		}
 	} else {
-		// For HTTP URLs, append /api/servers.json
-		apiURL = registryURL + "/api/servers.json"
+		// For HTTP URLs, ensure the URL ends with /api/servers.json
+		if strings.HasSuffix(registryURL, "/api/servers.json") || strings.HasSuffix(registryURL, "/servers.json") {
+			apiURL = registryURL
+		} else {
+			// Append /api/servers.json if not already present
+			if strings.HasSuffix(registryURL, "/") {
+				apiURL = registryURL + "api/servers.json"
+			} else {
+				apiURL = registryURL + "/api/servers.json"
+			}
+		}
 
 		// Create HTTP client with timeout
 		client := &http.Client{
