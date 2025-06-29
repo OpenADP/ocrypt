@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"os"
 	"sync"
 )
 
@@ -19,6 +20,14 @@ var (
 	debugMutex           sync.RWMutex
 	deterministicCounter int64
 )
+
+// init automatically enables debug mode if OPENADP_DEBUG environment variable is set
+func init() {
+	if envDebug := os.Getenv("OPENADP_DEBUG"); envDebug == "1" || envDebug == "true" {
+		debugMode = true
+		log.Println("🐛 Debug mode automatically enabled via OPENADP_DEBUG environment variable")
+	}
+}
 
 // SetDebugMode enables or disables debug mode for deterministic operations
 func SetDebugMode(enabled bool) {
@@ -66,10 +75,12 @@ func GetDeterministicMainSecret() *big.Int {
 
 	// Use the same large deterministic constant as Python and C++ implementations
 	// This is the hex pattern reduced modulo Ed25519 group order q
-	deterministicHex := "23456789abcdef0fedcba987654320ffd555c99f7c5421aa6ca577e195e5e23"
+	// 64 characters (even length) for consistent hex parsing across all SDKs
+	deterministicHex := "023456789abcdef0fedcba987654320ffd555c99f7c5421aa6ca577e195e5e23"
 	deterministicSecret, _ := new(big.Int).SetString(deterministicHex, 16)
 
-	DebugLog(fmt.Sprintf("Using deterministic main secret r = 0x%s", deterministicSecret.Text(16)))
+	// Use %064x to ensure leading zero is displayed (64-character hex)
+	DebugLog(fmt.Sprintf("Using deterministic main secret r = 0x%064x", deterministicSecret))
 	return deterministicSecret
 }
 
@@ -209,10 +220,11 @@ func GetDeterministicSecret() *big.Int {
 		panic("GetDeterministicSecret called outside debug mode")
 	}
 
-	// Use the same value as the main secret
-	deterministicHex := "23456789abcdef0fedcba987654320ffd555c99f7c5421aa6ca577e195e5e23"
+	// Use the same value as the main secret (64 characters, even length)
+	deterministicHex := "023456789abcdef0fedcba987654320ffd555c99f7c5421aa6ca577e195e5e23"
 	deterministicSecret, _ := new(big.Int).SetString(deterministicHex, 16)
 
-	DebugLog(fmt.Sprintf("Using deterministic secret: 0x%s", deterministicSecret.Text(16)))
+	// Use %064x to ensure leading zero is displayed (64-character hex)
+	DebugLog(fmt.Sprintf("Using deterministic secret: 0x%064x", deterministicSecret))
 	return deterministicSecret
 }

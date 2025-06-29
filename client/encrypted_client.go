@@ -2,7 +2,9 @@ package client
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -66,6 +68,12 @@ func (c *EncryptedOpenADPClient) makeUnencryptedRequest(method string, params in
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		// Log unencrypted JSON request
+		reqJSON, _ := json.MarshalIndent(request, "", "  ")
+		debug.DebugLog(fmt.Sprintf("📤 GO: Unencrypted JSON request: %s", string(reqJSON)))
+	}
+
 	resp, err := c.HTTPClient.Post(c.URL, "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to make HTTP request: %v", err)
@@ -86,6 +94,16 @@ func (c *EncryptedOpenADPClient) makeUnencryptedRequest(method string, params in
 		return nil, fmt.Errorf("failed to unmarshal response: %v", err)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		// Log unencrypted JSON response
+		respJSON, _ := json.MarshalIndent(map[string]interface{}{
+			"jsonrpc": "2.0",
+			"result":  response.Result,
+			"id":      response.ID,
+		}, "", "  ")
+		debug.DebugLog(fmt.Sprintf("📥 GO: Unencrypted JSON response: %s", string(respJSON)))
+	}
+
 	if response.Error != nil {
 		return nil, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
 	}
@@ -103,8 +121,19 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 		debug.DebugLog(fmt.Sprintf("Auth data: %v", authData))
 	}
 
-	// Step 1: Generate session ID
-	sessionID := fmt.Sprintf("session_%d", time.Now().UnixNano())
+	// Generate session ID
+	var sessionID string
+	if debug.IsDebugModeEnabled() {
+		sessionID = "deterministic_session_go"
+	} else {
+		// Generate random 16-byte session ID encoded as hex
+		sessionBytes := make([]byte, 16)
+		_, err := rand.Read(sessionBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate random sessionID: %v", err)
+		}
+		sessionID = hex.EncodeToString(sessionBytes)
+	}
 	if debug.IsDebugModeEnabled() {
 		debug.DebugLog(fmt.Sprintf("Generated session ID: %s", sessionID))
 	}
@@ -121,7 +150,7 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 	}
 
 	// Step 3: Start handshake
-	handshakeMsg1, err := noiseClient.WriteHandshakeMessage([]byte("test"))
+	handshakeMsg1, err := noiseClient.WriteHandshakeMessage([]byte(""))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create handshake message: %v", err)
 	}
@@ -129,6 +158,7 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 	if debug.IsDebugModeEnabled() {
 		debug.DebugLog("NoiseNK handshake started")
 		debug.DebugLog(fmt.Sprintf("Created handshake message 1: %d bytes", len(handshakeMsg1)))
+		debug.DebugLog(fmt.Sprintf("Handshake message 1 hex: %x", handshakeMsg1))
 	}
 
 	// Step 4: Send handshake to server
@@ -154,6 +184,9 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		debug.DebugLog(fmt.Sprintf("Sending handshake request (ID: %d)", requestID))
+		// Log handshake JSON request
+		handshakeReqJSON, _ := json.MarshalIndent(handshakeRequest, "", "  ")
+		debug.DebugLog(fmt.Sprintf("📤 GO: Handshake JSON request: %s", string(handshakeReqJSON)))
 	}
 
 	// Send handshake request
@@ -179,12 +212,12 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		// Convert response to JSON for logging
-		respJSON, _ := json.Marshal(map[string]interface{}{
+		respJSON, _ := json.MarshalIndent(map[string]interface{}{
 			"jsonrpc": "2.0",
 			"result":  handshakeResponse.Result,
 			"id":      handshakeResponse.ID,
-		})
-		debug.DebugLog(fmt.Sprintf("Handshake response received: %s", string(respJSON)))
+		}, "", "  ")
+		debug.DebugLog(fmt.Sprintf("📥 GO: Handshake JSON response: %s", string(respJSON)))
 	}
 
 	if handshakeResponse.Error != nil {
@@ -209,6 +242,7 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		debug.DebugLog(fmt.Sprintf("Received handshake message 2: %d bytes", len(handshakeMsg2)))
+		debug.DebugLog(fmt.Sprintf("Handshake message 2 hex: %x", handshakeMsg2))
 	}
 
 	// Complete handshake
@@ -219,6 +253,29 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		debug.DebugLog("Noise-NK handshake completed successfully")
+
+		// Debug transport keys after handshake completion
+		sendKey, recvKey := noiseClient.GetTransportKeys()
+		debug.DebugLog("🔑 GO INITIATOR: Transport key assignment complete")
+		debug.DebugLog("  - send_cipher: cs1 (initiator->responder)")
+		debug.DebugLog("  - recv_cipher: cs2 (responder->initiator)")
+		debug.DebugLog("  - Go uses sendKey for encrypt, recvKey for decrypt (initiator)")
+
+		// Log transport cipher information (what we can access)
+		debug.DebugLog("🔑 GO INITIATOR: Transport cipher information")
+
+		// Only log actual keys, not placeholders
+		if len(sendKey) > 0 && string(sendKey) != "send_key_not_accessible" {
+			debug.DebugLog(fmt.Sprintf("  - send key: %x", sendKey))
+		} else {
+			debug.DebugLog("  - send key: not accessible")
+		}
+
+		if len(recvKey) > 0 && string(recvKey) != "recv_key_not_accessible" {
+			debug.DebugLog(fmt.Sprintf("  - recv key: %x", recvKey))
+		} else {
+			debug.DebugLog("  - recv key: not accessible")
+		}
 	}
 
 	// Step 6: Prepare the actual method call
@@ -278,6 +335,9 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		debug.DebugLog(fmt.Sprintf("Sending encrypted call (ID: %d)", requestID+1))
+		// Log encrypted call JSON request
+		encryptedReqJSON, _ := json.MarshalIndent(encryptedRequest, "", "  ")
+		debug.DebugLog(fmt.Sprintf("📤 GO: Encrypted call JSON request: %s", string(encryptedReqJSON)))
 	}
 
 	// Send encrypted request
@@ -303,12 +363,12 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		// Convert response to JSON for logging
-		respJSON, _ := json.Marshal(map[string]interface{}{
+		respJSON, _ := json.MarshalIndent(map[string]interface{}{
 			"jsonrpc": "2.0",
 			"result":  encryptedResponse.Result,
 			"id":      encryptedResponse.ID,
-		})
-		debug.DebugLog(fmt.Sprintf("Encrypted response received: %s", string(respJSON)))
+		}, "", "  ")
+		debug.DebugLog(fmt.Sprintf("📥 GO: Encrypted call JSON response: %s", string(respJSON)))
 	}
 
 	if encryptedResponse.Error != nil {
@@ -353,11 +413,11 @@ func (c *EncryptedOpenADPClient) makeEncryptedRequest(method string, params inte
 
 	if debug.IsDebugModeEnabled() {
 		// Convert response to JSON for logging
-		respJSON, _ := json.Marshal(map[string]interface{}{
+		respJSON, _ := json.MarshalIndent(map[string]interface{}{
 			"id":      decryptedResponse.ID,
 			"jsonrpc": "2.0",
 			"result":  decryptedResponse.Result,
-		})
+		}, "", "  ")
 		debug.DebugLog(fmt.Sprintf("Decrypted response (after encryption): %s", string(respJSON)))
 	}
 

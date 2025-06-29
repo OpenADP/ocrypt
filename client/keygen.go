@@ -206,7 +206,18 @@ func GenerateEncryptionKey(identity *Identity, password string, maxGuesses, expi
 	}
 
 	U := common.H([]byte(identity.UID), []byte(identity.DID), []byte(identity.BID), pin)
+
+	// Add debug logging to match other SDKs
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Computed U point for identity: UID=%s, DID=%s, BID=%s", identity.UID, identity.DID, identity.BID))
+	}
+
 	S := common.PointMul(secret, U)
+
+	// Add debug logging to match other SDKs
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog("Computed S = secret * U")
+	}
 
 	// Step 6: Create shares using secret sharing
 	threshold := len(clients)/2 + 1 // Standard majority threshold: floor(N/2) + 1
@@ -242,14 +253,31 @@ func GenerateEncryptionKey(identity *Identity, password string, maxGuesses, expi
 		serverURL := liveServerURLs[i]
 		authCode := authCodes.ServerAuthCodes[serverURL]
 
-		// Convert share Y to integer string (server expects integer, not base64)
-		yInt := share.Y.String()
+		// Convert share Y to base64-encoded 32-byte little-endian format (per API spec)
+		yBytes := make([]byte, 32)
+		yBigInt := share.Y
+		yBigIntBytes := yBigInt.Bytes() // Big-endian format
+
+		// Convert to little-endian by copying and reversing
+		if len(yBigIntBytes) <= 32 {
+			copy(yBytes[32-len(yBigIntBytes):], yBigIntBytes) // Right-align in big-endian
+			// Convert to little-endian
+			for i, j := 0, len(yBytes)-1; i < j; i, j = i+1, j-1 {
+				yBytes[i], yBytes[j] = yBytes[j], yBytes[i]
+			}
+		} else {
+			return &GenerateEncryptionKeyResult{
+				Error: fmt.Sprintf("Y coordinate too large for 32-byte encoding: %d bytes", len(yBigIntBytes)),
+			}
+		}
+
+		yBase64 := base64.StdEncoding.EncodeToString(yBytes)
 
 		// Use encrypted registration if server has public key, otherwise unencrypted for compatibility
 		encrypted := client.HasPublicKey()
 
 		success, err := client.RegisterSecret(
-			authCode, identity.UID, identity.DID, identity.BID, version, int(share.X.Int64()), yInt, maxGuesses, expiration, encrypted, nil)
+			authCode, identity.UID, identity.DID, identity.BID, version, int(share.X.Int64()), yBase64, maxGuesses, expiration, encrypted, nil)
 
 		if err != nil {
 			registrationErrors = append(registrationErrors, fmt.Sprintf("Server %d (%s): %v", i+1, serverURL, err))

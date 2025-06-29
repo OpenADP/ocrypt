@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/openadp/ocrypt/debug"
 )
 
 // JSONRPCRequest represents a JSON-RPC 2.0 request
@@ -112,6 +114,12 @@ type ListBackupsResult struct {
 
 // makeRequest makes a JSON-RPC request to the server
 func (c *OpenADPClient) makeRequest(method string, params interface{}) (*JSONRPCResponse, error) {
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Making JSON-RPC request to %s", c.URL))
+		debug.DebugLog(fmt.Sprintf("Method: %s", method))
+		debug.DebugLog(fmt.Sprintf("Parameters: %v", params))
+	}
+
 	request := JSONRPCRequest{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -120,35 +128,67 @@ func (c *OpenADPClient) makeRequest(method string, params interface{}) (*JSONRPC
 	}
 	c.requestID++
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Request ID: %d", request.ID))
+		if requestJSON, err := json.Marshal(request); err == nil {
+			debug.DebugLog(fmt.Sprintf("JSON-RPC request: %s", string(requestJSON)))
+		}
+	}
+
 	requestBody, err := json.Marshal(request)
 	if err != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("Failed to marshal request: %v", err))
+		}
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
 	resp, err := c.HTTPClient.Post(c.URL, "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("HTTP request failed: %v", err))
+		}
 		return nil, fmt.Errorf("failed to make HTTP request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("HTTP error: %d %s", resp.StatusCode, resp.Status))
+		}
 		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("Failed to read response body: %v", err))
+		}
 		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Response received: %s", string(responseBody)))
 	}
 
 	var response JSONRPCResponse
 	if err := json.Unmarshal(responseBody, &response); err != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("Failed to unmarshal response: %v", err))
+		}
 		return nil, fmt.Errorf("failed to unmarshal response: %v", err)
 	}
 
 	if response.Error != nil {
+		if debug.IsDebugModeEnabled() {
+			debug.DebugLog(fmt.Sprintf("JSON-RPC error: %d - %s", response.Error.Code, response.Error.Message))
+		}
 		return nil, fmt.Errorf("JSON-RPC error %d: %s", response.Error.Code, response.Error.Message)
 	}
 
+	if debug.IsDebugModeEnabled() {
+		debug.DebugLog(fmt.Sprintf("Request successful, result: %v", response.Result))
+	}
 	return &response, nil
 }
 

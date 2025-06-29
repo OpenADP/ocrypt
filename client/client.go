@@ -270,8 +270,20 @@ func (c *Client) RegisterSecret(uid, did, bid string, version, x int, y []byte, 
 		}
 	}
 
-	// Convert y bytes to base64 string for JSON-RPC (server expects decimal or base64)
-	yStr := base64.StdEncoding.EncodeToString(y)
+	// Convert y bytes to base64-encoded 32-byte little-endian format (per API spec)
+	// The input y bytes are from yInt.Bytes() which returns big-endian minimal bytes
+	// We need to convert to 32-byte little-endian format
+	yBytes32 := make([]byte, 32)
+
+	// Copy the input bytes to the end of the 32-byte array (big-endian placement)
+	copy(yBytes32[32-len(y):], y)
+
+	// Reverse to convert from big-endian to little-endian
+	for i, j := 0, len(yBytes32)-1; i < j; i, j = i+1, j-1 {
+		yBytes32[i], yBytes32[j] = yBytes32[j], yBytes32[i]
+	}
+
+	yStr := base64.StdEncoding.EncodeToString(yBytes32)
 
 	// Try each server until one succeeds
 	var lastErr error
