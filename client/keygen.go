@@ -293,9 +293,9 @@ func GenerateEncryptionKey(identity *Identity, password string, maxGuesses, expi
 		}
 	}
 
-	if successfulRegistrations == 0 {
+	if successfulRegistrations < threshold {
 		return &GenerateEncryptionKeyResult{
-			Error: fmt.Sprintf("Failed to register any shares: %v", registrationErrors),
+			Error: fmt.Sprintf("Failed to register enough shares: got %d/%d, need %d (threshold). Errors: %v", successfulRegistrations, len(clients), threshold, registrationErrors),
 		}
 	}
 
